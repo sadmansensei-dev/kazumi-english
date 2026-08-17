@@ -1,0 +1,406 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter_modular/flutter_modular.dart';
+import 'package:kazumi/bean/card/palette_card.dart';
+import 'package:kazumi/utils/constants.dart';
+import 'package:kazumi/services/storage/storage.dart';
+import 'package:kazumi/bean/dialog/dialog_helper.dart';
+import 'package:kazumi/bean/settings/theme_provider.dart';
+import 'package:kazumi/bean/settings/color_type.dart';
+import 'package:kazumi/bean/settings/settings_detail_scaffold.dart';
+import 'package:kazumi/bean/settings/settings_list.dart';
+import 'package:window_manager/window_manager.dart';
+import 'package:kazumi/utils/device.dart';
+import 'package:kazumi/utils/theme.dart';
+
+class ThemeSettingsPage extends StatefulWidget {
+  const ThemeSettingsPage({super.key});
+
+  @override
+  State<ThemeSettingsPage> createState() => _ThemeSettingsPageState();
+}
+
+class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
+  late dynamic defaultDanmakuArea;
+  late dynamic defaultThemeMode;
+  late dynamic defaultThemeColor;
+  late bool oledEnhance;
+  late bool useDynamicColor;
+  late bool showWindowButton;
+  late bool useSystemFont;
+  late final ThemeProvider themeProvider;
+  final MenuController menuController = MenuController();
+
+  @override
+  void initState() {
+    super.initState();
+    defaultThemeMode = GStorage.getSetting(SettingsKeys.themeMode);
+    defaultThemeColor = GStorage.getSetting(SettingsKeys.themeColor);
+    oledEnhance = GStorage.getSetting(SettingsKeys.oledEnhance);
+    useDynamicColor = GStorage.getSetting(SettingsKeys.useDynamicColor);
+    showWindowButton = GStorage.getSetting(SettingsKeys.showWindowButton);
+    useSystemFont = GStorage.getSetting(SettingsKeys.useSystemFont);
+    themeProvider = context.read<ThemeProvider>();
+  }
+
+  void onBackPressed(BuildContext context) {
+    if (KazumiDialog.observer.hasKazumiDialog) {
+      KazumiDialog.dismiss();
+      return;
+    }
+  }
+
+  void setTheme(Color? color) {
+    var defaultDarkTheme = ThemeData(
+        useMaterial3: true,
+        fontFamily: themeProvider.currentFontFamily,
+        brightness: Brightness.dark,
+        colorSchemeSeed: color,
+        progressIndicatorTheme: progressIndicatorTheme2024,
+        sliderTheme: sliderTheme2024,
+        pageTransitionsTheme: pageTransitionsTheme2024);
+    var oledTheme = oledDarkTheme(defaultDarkTheme);
+    themeProvider.setTheme(
+      ThemeData(
+          useMaterial3: true,
+          fontFamily: themeProvider.currentFontFamily,
+          brightness: Brightness.light,
+          colorSchemeSeed: color,
+          progressIndicatorTheme: progressIndicatorTheme2024,
+          sliderTheme: sliderTheme2024,
+          pageTransitionsTheme: pageTransitionsTheme2024),
+      oledEnhance ? oledTheme : defaultDarkTheme,
+    );
+    defaultThemeColor = color?.toARGB32().toRadixString(16) ?? 'default';
+    GStorage.putSetting(SettingsKeys.themeColor, defaultThemeColor);
+  }
+
+  void resetTheme() {
+    var defaultDarkTheme = ThemeData(
+        useMaterial3: true,
+        fontFamily: themeProvider.currentFontFamily,
+        brightness: Brightness.dark,
+        colorSchemeSeed: Colors.green,
+        progressIndicatorTheme: progressIndicatorTheme2024,
+        sliderTheme: sliderTheme2024,
+        pageTransitionsTheme: pageTransitionsTheme2024);
+    var oledTheme = oledDarkTheme(defaultDarkTheme);
+    themeProvider.setTheme(
+      ThemeData(
+          useMaterial3: true,
+          fontFamily: themeProvider.currentFontFamily,
+          brightness: Brightness.light,
+          colorSchemeSeed: Colors.green,
+          progressIndicatorTheme: progressIndicatorTheme2024,
+          sliderTheme: sliderTheme2024,
+          pageTransitionsTheme: pageTransitionsTheme2024),
+      oledEnhance ? oledTheme : defaultDarkTheme,
+    );
+    defaultThemeColor = 'default';
+    GStorage.putSetting(SettingsKeys.themeColor, 'default');
+  }
+
+  void updateTheme(String theme) async {
+    if (theme == 'dark') {
+      themeProvider.setThemeMode(ThemeMode.dark);
+    }
+    if (theme == 'light') {
+      themeProvider.setThemeMode(ThemeMode.light);
+    }
+    if (theme == 'system') {
+      themeProvider.setThemeMode(ThemeMode.system);
+    }
+    await GStorage.putSetting(SettingsKeys.themeMode, theme);
+    setState(() {
+      defaultThemeMode = theme;
+    });
+
+    // Update Windows title bar theme
+    if (Platform.isWindows) {
+      await windowManager.setBrightness(
+          themeProvider.isEffectiveDark() ? Brightness.dark : Brightness.light);
+    }
+  }
+
+  void updateOledEnhance() {
+    dynamic color;
+    oledEnhance = GStorage.getSetting(SettingsKeys.oledEnhance);
+    if (defaultThemeColor == 'default') {
+      color = Colors.green;
+    } else {
+      color = Color(int.parse(defaultThemeColor, radix: 16));
+    }
+    setTheme(color);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        onBackPressed(context);
+      },
+      child: SettingsDetailScaffold(
+        title: const Text('Appearance Settings'),
+        body: SettingsList(
+          sections: [
+            SettingsSection(
+              title: Text('Appearance'),
+              tiles: [
+                SettingsTile(
+                  leading: Icons.dark_mode_rounded,
+                  onPressed: (_) {
+                    if (menuController.isOpen) {
+                      menuController.close();
+                    } else {
+                      menuController.open();
+                    }
+                  },
+                  title: Text('Dark Mode'),
+                  value: MenuAnchor(
+                    consumeOutsideTap: true,
+                    controller: menuController,
+                    builder: (_, __, ___) {
+                      return Text(
+                        defaultThemeMode == 'light'
+                            ? 'Light'
+                            : (defaultThemeMode == 'dark' ? 'Dark' : 'Follow System'),
+                      );
+                    },
+                    menuChildren: [
+                      MenuItemButton(
+                        requestFocusOnHover: false,
+                        onPressed: () => updateTheme('system'),
+                        child: Container(
+                          height: 48,
+                          constraints: BoxConstraints(minWidth: 112),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.brightness_auto_rounded,
+                                  color: defaultThemeMode == 'system'
+                                      ? Theme.of(context).colorScheme.primary
+                                      : null,
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Follow System',
+                                  style: TextStyle(
+                                    color: defaultThemeMode == 'system'
+                                        ? Theme.of(context).colorScheme.primary
+                                        : null,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      MenuItemButton(
+                        requestFocusOnHover: false,
+                        onPressed: () => updateTheme('light'),
+                        child: Container(
+                          height: 48,
+                          constraints: BoxConstraints(minWidth: 112),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.light_mode_rounded,
+                                  color: defaultThemeMode == 'light'
+                                      ? Theme.of(context).colorScheme.primary
+                                      : null,
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Light',
+                                  style: TextStyle(
+                                      color: defaultThemeMode == 'light'
+                                          ? Theme.of(context)
+                                              .colorScheme
+                                              .primary
+                                          : null),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      MenuItemButton(
+                        requestFocusOnHover: false,
+                        onPressed: () => updateTheme('dark'),
+                        child: Container(
+                          height: 48,
+                          constraints: BoxConstraints(minWidth: 112),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.dark_mode_rounded,
+                                  color: defaultThemeMode == 'dark'
+                                      ? Theme.of(context).colorScheme.primary
+                                      : null,
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Dark',
+                                  style: TextStyle(
+                                    color: defaultThemeMode == 'dark'
+                                        ? Theme.of(context).colorScheme.primary
+                                        : null,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SettingsTile(
+                  leading: Icons.palette_rounded,
+                  enabled: !useDynamicColor,
+                  onPressed: (_) async {
+                    KazumiDialog.show(builder: (context) {
+                      return AlertDialog(
+                        title: Text('Color Scheme'),
+                        content: StatefulBuilder(builder:
+                            (BuildContext context, StateSetter setState) {
+                          final List<Map<String, dynamic>> colorThemes =
+                              colorThemeTypes;
+                          return Wrap(
+                            alignment: WrapAlignment.center,
+                            spacing: 8,
+                            runSpacing: isDesktop() ? 8 : 0,
+                            children: [
+                              ...colorThemes.map(
+                                (e) {
+                                  final index = colorThemes.indexOf(e);
+                                  return GestureDetector(
+                                    onTap: () {
+                                      index == 0
+                                          ? resetTheme()
+                                          : setTheme(e['color']);
+                                      KazumiDialog.dismiss();
+                                    },
+                                    child: Column(
+                                      children: [
+                                        PaletteCard(
+                                          color: e['color'],
+                                          selected: (e['color']
+                                                      .value
+                                                      .toRadixString(16) ==
+                                                  defaultThemeColor ||
+                                              (defaultThemeColor == 'default' &&
+                                                  index == 0)),
+                                        ),
+                                        Text(e['label']),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              )
+                            ],
+                          );
+                        }),
+                      );
+                    });
+                  },
+                  title: Text('Color Scheme'),
+                ),
+                SettingsTile.switchTile(
+                  leading: Icons.colorize_rounded,
+                  enabled: !Platform.isIOS,
+                  onToggle: (value) async {
+                    useDynamicColor = value ?? !useDynamicColor;
+                    await GStorage.putSetting(
+                        SettingsKeys.useDynamicColor, useDynamicColor);
+                    themeProvider.setDynamic(useDynamicColor);
+                    setState(() {});
+                  },
+                  title: Text('Dynamic Color'),
+                  initialValue: useDynamicColor,
+                ),
+                SettingsTile.switchTile(
+                  leading: Icons.font_download_rounded,
+                  onToggle: (value) async {
+                    useSystemFont = value ?? !useSystemFont;
+                    await GStorage.putSetting(
+                        SettingsKeys.useSystemFont, useSystemFont);
+                    themeProvider.setFontFamily(useSystemFont);
+                    dynamic color;
+                    if (defaultThemeColor == 'default') {
+                      color = Colors.green;
+                    } else {
+                      color = Color(int.parse(defaultThemeColor, radix: 16));
+                    }
+                    setTheme(color);
+                    setState(() {});
+                  },
+                  title: Text('Use System Font'),
+                  description: Text('Use MI Sans font when off'),
+                  initialValue: useSystemFont,
+                ),
+              ],
+              bottomInfo: Text('Dynamic color is only supported on Android 12+ and desktop platforms'),
+            ),
+            SettingsSection(
+              title: Text('Show'),
+              tiles: [
+                SettingsTile.switchTile(
+                  leading: Icons.contrast_rounded,
+                  onToggle: (value) async {
+                    oledEnhance = value ?? !oledEnhance;
+                    await GStorage.putSetting(
+                        SettingsKeys.oledEnhance, oledEnhance);
+                    updateOledEnhance();
+                    setState(() {});
+                  },
+                  title: Text('OLED Optimization'),
+                  description: Text('Use pure black background in dark mode'),
+                  initialValue: oledEnhance,
+                ),
+              ],
+            ),
+            if (isDesktop())
+              SettingsSection(
+                title: Text('Window'),
+                tiles: [
+                  SettingsTile.switchTile(
+                    leading: Icons.web_asset_rounded,
+                    onToggle: (value) async {
+                      showWindowButton = value ?? !showWindowButton;
+                      await GStorage.putSetting(
+                          SettingsKeys.showWindowButton, showWindowButton);
+                      setState(() {});
+                    },
+                    title: Text('Use System Title Bar'),
+                    description: Text('Restart the app to apply'),
+                    initialValue: showWindowButton,
+                  ),
+                ],
+              ),
+            if (Platform.isAndroid)
+              SettingsSection(
+                title: Text('Screen'),
+                tiles: [
+                  SettingsTile(
+                    leading: Icons.sixty_fps_rounded,
+                    onPressed: (_) async {
+                      context.pushNamed('/settings/theme/display');
+                    },
+                    title: Text('Screen Refresh Rate'),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
